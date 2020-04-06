@@ -14,14 +14,14 @@ var JobListItemView = _super.extend(
         //logger              : console,
 
         className: `${_super.prototype.className} job`,
-        id: function() {
+        id: function () {
             return ["job", this.model.get("id")].join("-");
         },
 
         foldoutPanelClass: DATASET_LIST.DatasetList,
 
         /** Set up: instance vars, options, and event handlers */
-        initialize: function(attributes) {
+        initialize: function (attributes) {
             if (attributes.logger) {
                 this.logger = this.model.logger = attributes.logger;
             }
@@ -36,7 +36,7 @@ var JobListItemView = _super.extend(
         },
 
         /** In this override, add the state as a class for use with state-based CSS */
-        _swapNewRender: function($newRender) {
+        _swapNewRender: function ($newRender) {
             _super.prototype._swapNewRender.call(this, $newRender);
             if (this.model.has("state")) {
                 this.$el.addClass(`state-${this.model.get("state")}`);
@@ -45,11 +45,11 @@ var JobListItemView = _super.extend(
         },
 
         /** Stub to return proper foldout panel options */
-        _getFoldoutPanelOptions: function() {
+        _getFoldoutPanelOptions: function () {
             var options = _super.prototype._getFoldoutPanelOptions.call(this);
             return _.extend(options, {
                 collection: this.model.outputCollection,
-                selecting: false
+                selecting: false,
             });
         },
 
@@ -58,12 +58,12 @@ var JobListItemView = _super.extend(
         //  or something similar in order to remove some of the complexity here
 
         /** Return tool.inputs that should/can be safely displayed */
-        _labelParamMap: function() {
+        _labelParamMap: function () {
             //ADAPTER
             var params = this.model.get("params");
 
             var labelParamMap = {};
-            _.each(this.tool.inputs, i => {
+            _.each(this.tool.inputs, (i) => {
                 //console.debug( i.label, i.model_class );
                 if (i.label && i.model_class !== "DataToolParameter") {
                     labelParamMap[i.label] = params[i.name];
@@ -72,12 +72,12 @@ var JobListItemView = _super.extend(
             return labelParamMap;
         },
 
-        _labelInputMap: function() {
+        _labelInputMap: function () {
             //ADAPTER
             var view = this;
 
             var labelInputMap = {};
-            _.each(this.jobData.inputs, input => {
+            _.each(this.jobData.inputs, (input) => {
                 var toolInput = view._findToolInput(input.name);
                 if (toolInput) {
                     labelInputMap[toolInput.label] = input;
@@ -87,7 +87,7 @@ var JobListItemView = _super.extend(
         },
 
         /** Return a tool.inputs object that matches (or partially matches) the given (job input) name */
-        _findToolInput: function(name) {
+        _findToolInput: function (name) {
             //ADAPTER
             var toolInputs = this.tool.inputs;
 
@@ -99,23 +99,22 @@ var JobListItemView = _super.extend(
         },
 
         /** Return a tool.inputs object that partially matches the given (job input) name (for repeat dataset inputs)*/
-        _findRepeatToolInput: function(name, toolInputs) {
+        _findRepeatToolInput: function (name, toolInputs) {
             //ADAPTER
             toolInputs = toolInputs || this.tool.inputs;
-            var partialMatch = _.find(toolInputs, i => name.indexOf(i.name) === 0);
+            var partialMatch = _.find(toolInputs, (i) => name.indexOf(i.name) === 0);
             if (!partialMatch) {
                 return undefined;
             }
 
-            var subMatch = _.find(partialMatch.inputs, i => name.indexOf(i.name) !== -1);
-            return subMatch;
+            return _.find(partialMatch.inputs, (i) => name.indexOf(i.name) !== -1);
         },
 
         // ........................................................................ misc
         /** String representation */
-        toString: function() {
+        toString: function () {
             return `JobListItemView(${this.model})`;
-        }
+        },
     }
 );
 
@@ -142,7 +141,7 @@ JobListItemView.prototype.templates = (() => {
 
         // expandable area for more details
         '<div class="details"></div>',
-        "</div>"
+        "</div>",
     ]);
 
     var titleBarTemplate = BASE_MVC.wrapTemplate(
@@ -154,14 +153,14 @@ JobListItemView.prototype.templates = (() => {
             '<span class="name"><%- view.tool.name %></span>',
             "</div>",
             '<div class="subtitle">',
-            '<span class="description"><%- view.tool.description %></span',
+            '<span class="description"><%- view.tool.description %></span>',
             '<span class="create-time">',
             " ",
             _l("Created"),
             ": <%= new Date( job.create_time ).toString() %>, ",
             "</span",
             "</div>",
-            "</div>"
+            "</div>",
         ],
         "job"
     );
@@ -169,14 +168,14 @@ JobListItemView.prototype.templates = (() => {
     var subtitleTemplate = BASE_MVC.wrapTemplate(
         [
             '<div class="subtitle">',
-            '<span class="description"><%- view.tool.description %></span',
+            '<span class="description"><%- view.tool.description %></span>',
             //'<span class="create-time">',
             //    ' ', _l( 'Created' ), ': <%= new Date( job.create_time ).toString() %>, ',
             //'</span',
             //'<span class="version">',
             //    ' (', _l( 'version' ), ': <%- view.tool.version %>)',
             //'</span',
-            "</div>"
+            "</div>",
         ],
         "job"
     );
@@ -203,7 +202,7 @@ JobListItemView.prototype.templates = (() => {
             "</div>",
             "<% }) %>",
             "</div>",
-            "</div>"
+            "</div>",
         ],
         "job"
     );
@@ -212,11 +211,11 @@ JobListItemView.prototype.templates = (() => {
         //el          : elTemplate,
         titleBar: titleBarTemplate,
         subtitle: subtitleTemplate,
-        details: detailsTemplate
+        details: detailsTemplate,
     });
 })();
 
 //=============================================================================
 export default {
-    JobListItemView: JobListItemView
+    JobListItemView: JobListItemView,
 };

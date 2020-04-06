@@ -4,7 +4,11 @@ from os import getcwd
 from tempfile import mkdtemp
 from unittest import TestCase
 
-from galaxy.jobs.command_factory import build_command, SETUP_GALAXY_FOR_METADATA
+from galaxy.jobs.command_factory import (
+    build_command,
+    PREPARE_DIRS,
+    SETUP_GALAXY_FOR_METADATA,
+)
 from galaxy.util.bunch import Bunch
 
 MOCK_COMMAND_LINE = "/opt/galaxy/tools/bowtie /mnt/galaxyData/files/000/input000.dat"
@@ -46,7 +50,7 @@ class TestCommandFactory(TestCase):
         dep_commands = [". /opt/galaxy/tools/bowtie/default/env.sh"]
         self.job_wrapper.dependency_shell_commands = dep_commands
         self.__assert_command_is(_surround_command(
-            "%s %s/tool_script.sh > ../tool_stdout 2> ../tool_stderr; return_code=$?" % (
+            "%s %s/tool_script.sh > ../outputs/tool_stdout 2> ../outputs/tool_stderr; return_code=$?" % (
                 self.job_wrapper.shell,
                 self.job_wrapper.working_directory,
             )))
@@ -157,7 +161,7 @@ class TestCommandFactory(TestCase):
 
 
 def _surround_command(command):
-    return '''rm -rf working; mkdir -p working; cd working; %s; sh -c "exit $return_code"''' % command
+    return '''%s; %s; sh -c "exit $return_code"''' % (PREPARE_DIRS, command)
 
 
 class MockJobWrapper(object):
@@ -182,6 +186,9 @@ class MockJobWrapper(object):
 
     def get_command_line(self):
         return self.command_line
+
+    def container_monitor_command(self, *args, **kwds):
+        return None
 
     @property
     def requires_setting_metadata(self):

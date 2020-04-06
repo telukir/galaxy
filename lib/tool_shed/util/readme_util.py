@@ -68,7 +68,7 @@ def build_readme_files_dict(app, repository, changeset_revision, metadata, tool_
                         readme_files_dict[readme_file_name] = text_of_reasonable_length
                 else:
                     # We must be in the tool shed and have an old changeset_revision, so we need to retrieve the file contents from the repository manifest.
-                    repo = hg_util.get_repo_for_repository(app, repository=repository)
+                    repo = repository.hg_repo
                     ctx = hg_util.get_changectx_for_changeset(repo, changeset_revision)
                     if ctx:
                         fctx = hg_util.get_file_context_from_ctx(ctx, readme_file_name)
@@ -97,14 +97,3 @@ def get_readme_files_dict_for_display(app, tool_shed_url, repo_info_dict):
     raw_text = url_get(tool_shed_url, password_mgr=app.tool_shed_registry.url_auth(tool_shed_url), pathspec=pathspec, params=params)
     readme_files_dict = json.loads(raw_text)
     return readme_files_dict
-
-
-def get_readme_file_names(repository_name):
-    """Return a list of file names that will be categorized as README files for the received repository_name."""
-    readme_files = ['readme', 'read_me', 'install']
-    valid_filenames = ['%s.txt' % f for f in readme_files]
-    valid_filenames.extend(['%s.rst' % f for f in readme_files])
-    valid_filenames.extend(readme_files)
-    valid_filenames.append('%s.txt' % repository_name)
-    valid_filenames.append('%s.rst' % repository_name)
-    return valid_filenames

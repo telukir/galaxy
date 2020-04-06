@@ -1,5 +1,6 @@
 # Contains objects for using external display applications
 import logging
+from collections import OrderedDict
 from copy import deepcopy
 
 from six import string_types
@@ -9,7 +10,6 @@ from galaxy.util import (
     parse_xml,
     string_as_bool
 )
-from galaxy.util.odict import odict
 from galaxy.util.template import fill_template
 from .parameters import (
     DEFAULT_DATASET_NAME,
@@ -19,6 +19,13 @@ from .parameters import (
 from .util import encode_dataset_user
 
 log = logging.getLogger(__name__)
+
+
+def quote_plus_string(value, **kwds):
+    # Simple helper to make sure value is a string when trying to quote
+    # Object passed in might not be a bare string/bytes, if is e.g., a template result
+    # Prevents e.g. issue of "quote_from_bytes() expected bytes"
+    return quote_plus(str(value), **kwds)
 
 
 class DisplayApplicationLink(object):
@@ -41,7 +48,7 @@ class DisplayApplicationLink(object):
 
     def __init__(self, display_application):
         self.display_application = display_application
-        self.parameters = odict()  # parameters are populated in order, allowing lower listed ones to have values of higher listed ones
+        self.parameters = OrderedDict()  # parameters are populated in order, allowing lower listed ones to have values of higher listed ones
         self.url_param_name_map = {}
         self.url = None
         self.id = None
@@ -59,11 +66,11 @@ class DisplayApplicationLink(object):
 
     def get_inital_values(self, data, trans):
         if self.other_values:
-            rval = odict(self.other_values)
+            rval = OrderedDict(self.other_values)
         else:
-            rval = odict()
+            rval = OrderedDict()
         rval.update({'BASE_URL': trans.request.base, 'APP': trans.app})  # trans automatically appears as a response, need to add properties of trans that we want here
-        BASE_PARAMS = {'qp': quote_plus, 'url_for': trans.app.url_for}
+        BASE_PARAMS = {'qp': quote_plus_string, 'url_for': trans.app.url_for}
         for key, value in BASE_PARAMS.items():  # add helper functions/variables
             rval[key] = value
         rval[DEFAULT_DATASET_NAME] = data  # always have the display dataset name available
@@ -252,6 +259,10 @@ class PopulatedDisplayApplicationLink(object):
                 return name
         raise ValueError("Unknown URL parameter name provided: %s" % url)
 
+    @property
+    def allow_cors(self):
+        return self.link.allow_cors
+
 
 class DisplayApplication(object):
     @classmethod
@@ -280,7 +291,7 @@ class DisplayApplication(object):
         if version is None:
             version = "1.0.0"
         self.version = version
-        self.links = odict()
+        self.links = OrderedDict()
         self._filename = filename
         self._elem = elem
         self._data_table_versions = {}

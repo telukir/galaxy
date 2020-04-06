@@ -19,7 +19,7 @@ REPLACE_ON_TRUTHY = object()
 __all__ = ('DataCollectionToolParameter', 'DataToolParameter', 'SelectToolParameter')
 
 
-def visit_input_values(inputs, input_values, callback, name_prefix='', label_prefix='', parent_prefix='', context=None, no_replacement_value=REPLACE_ON_TRUTHY):
+def visit_input_values(inputs, input_values, callback, name_prefix='', label_prefix='', parent_prefix='', context=None, no_replacement_value=REPLACE_ON_TRUTHY, replace_optional_connections=False):
     """
     Given a tools parameter definition (`inputs`) and a specific set of
     parameter `values`, call `callback` for each non-grouping parameter,
@@ -28,9 +28,9 @@ def visit_input_values(inputs, input_values, callback, name_prefix='', label_pre
 
     If the callback returns a value, it will be replace the old value.
 
+    >>> from collections import OrderedDict
     >>> from xml.etree.ElementTree import XML
     >>> from galaxy.util.bunch import Bunch
-    >>> from galaxy.util.odict import odict
     >>> from galaxy.tools.parameters.basic import TextToolParameter, BooleanToolParameter
     >>> from galaxy.tools.parameters.grouping import Repeat
     >>> a = TextToolParameter(None, XML('<param name="a"/>'))
@@ -44,9 +44,9 @@ def visit_input_values(inputs, input_values, callback, name_prefix='', label_pre
     >>> i = TextToolParameter(None, XML('<param name="i"/>'))
     >>> j = TextToolParameter(None, XML('<param name="j"/>'))
     >>> b.name = b.title = 'b'
-    >>> b.inputs = odict([ ('c', c), ('d', d) ])
+    >>> b.inputs = OrderedDict([ ('c', c), ('d', d) ])
     >>> d.name = d.title = 'd'
-    >>> d.inputs = odict([ ('e', e), ('f', f) ])
+    >>> d.inputs = OrderedDict([ ('e', e), ('f', f) ])
     >>> f.test_param = g
     >>> f.name = 'f'
     >>> f.cases = [Bunch(value='true', inputs= {'h': h}), Bunch(value='false', inputs= { 'i': i })]
@@ -55,8 +55,8 @@ def visit_input_values(inputs, input_values, callback, name_prefix='', label_pre
     ...     print('name=%s, prefix=%s, prefixed_name=%s, prefixed_label=%s, value=%s' % (input.name, prefix, prefixed_name, prefixed_label, value))
     ...     if error:
     ...         print(error)
-    >>> inputs = odict([('a', a),('b', b)])
-    >>> nested = odict([('a', 1), ('b', [odict([('c', 3), ('d', [odict([ ('e', 5), ('f', odict([ ('g', True), ('h', 7)]))])])])])])
+    >>> inputs = OrderedDict([('a', a),('b', b)])
+    >>> nested = OrderedDict([('a', 1), ('b', [OrderedDict([('c', 3), ('d', [OrderedDict([ ('e', 5), ('f', OrderedDict([ ('g', True), ('h', 7)]))])])])])])
     >>> visit_input_values(inputs, nested, visitor)
     name=a, prefix=, prefixed_name=a, prefixed_label=a, value=1
     name=c, prefix=b_0|, prefixed_name=b_0|c, prefixed_label=b 1 > c, value=3
@@ -104,7 +104,7 @@ def visit_input_values(inputs, input_values, callback, name_prefix='', label_pre
     No value found for 'b 1 > d 1 > j'.
 
     >>> # Other parameters are missing in state
-    >>> nested = odict([('b', [odict([( 'd', [odict([('f', odict([('g', True), ('h', 7)]))])])])])])
+    >>> nested = OrderedDict([('b', [OrderedDict([( 'd', [OrderedDict([('f', OrderedDict([('g', True), ('h', 7)]))])])])])])
     >>> visit_input_values(inputs, nested, visitor)
     name=a, prefix=, prefixed_name=a, prefixed_label=a, value=None
     No value found for 'a'.
@@ -116,10 +116,11 @@ def visit_input_values(inputs, input_values, callback, name_prefix='', label_pre
     No value found for 'b 1 > d 1 > j'.
     """
     def callback_helper(input, input_values, name_prefix, label_prefix, parent_prefix, context=None, error=None):
+        value = input_values.get(input.name)
         args = {
             'input'             : input,
             'parent'            : input_values,
-            'value'             : input_values.get(input.name),
+            'value'             : value,
             'prefixed_name'     : '%s%s' % (name_prefix, input.name),
             'prefixed_label'    : '%s%s' % (label_prefix, input.label or input.name),
             'prefix'            : parent_prefix,
@@ -135,6 +136,8 @@ def visit_input_values(inputs, input_values, callback, name_prefix='', label_pre
             replace = new_value != no_replacement_value
         if replace:
             input_values[input.name] = new_value
+        elif replace_optional_connections and is_runtime_value(value):
+            input_values[input.name] = input.value
 
     def get_current_case(input, input_values):
         try:
@@ -269,9 +272,9 @@ def update_dataset_ids(input_values, translate_values, src):
 def populate_state(request_context, inputs, incoming, state, errors={}, prefix='', context=None, check=True):
     """
     Populates nested state dict from incoming parameter values.
+    >>> from collections import OrderedDict
     >>> from xml.etree.ElementTree import XML
     >>> from galaxy.util.bunch import Bunch
-    >>> from galaxy.util.odict import odict
     >>> from galaxy.tools.parameters.basic import TextToolParameter, BooleanToolParameter
     >>> from galaxy.tools.parameters.grouping import Repeat
     >>> trans = Bunch(workflow_building_mode=False)
@@ -289,15 +292,15 @@ def populate_state(request_context, inputs, incoming, state, errors={}, prefix='
     >>> h = TextToolParameter(None, XML('<param name="h"/>'))
     >>> i = TextToolParameter(None, XML('<param name="i"/>'))
     >>> b.name = 'b'
-    >>> b.inputs = odict([('c', c), ('d', d)])
+    >>> b.inputs = OrderedDict([('c', c), ('d', d)])
     >>> d.name = 'd'
-    >>> d.inputs = odict([('e', e), ('f', f)])
+    >>> d.inputs = OrderedDict([('e', e), ('f', f)])
     >>> f.test_param = g
     >>> f.name = 'f'
     >>> f.cases = [Bunch(value='true', inputs= { 'h': h }), Bunch(value='false', inputs= { 'i': i })]
-    >>> inputs = odict([('a',a),('b',b)])
-    >>> flat = odict([('a', 1), ('b_0|c', 2), ('b_0|d_0|e', 3), ('b_0|d_0|f|h', 4), ('b_0|d_0|f|g', True)])
-    >>> state = odict()
+    >>> inputs = OrderedDict([('a',a),('b',b)])
+    >>> flat = OrderedDict([('a', 1), ('b_0|c', 2), ('b_0|d_0|e', 3), ('b_0|d_0|f|h', 4), ('b_0|d_0|f|g', True)])
+    >>> state = OrderedDict()
     >>> populate_state(trans, inputs, flat, state, check=False)
     >>> print(state['a'])
     1

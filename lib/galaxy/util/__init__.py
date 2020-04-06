@@ -26,6 +26,7 @@ import xml.dom.minidom
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from functools import partial
 from hashlib import md5
 from os.path import relpath
 from xml.etree import ElementInclude, ElementTree
@@ -59,6 +60,11 @@ except ImportError:
     docutils_core = None
     docutils_html4css1 = None
 
+try:
+    import uwsgi
+except ImportError:
+    uwsgi = None
+
 from .inflection import English, Inflector
 from .logging import get_logger
 from .path import safe_contains, safe_makedirs, safe_relpath  # noqa: F401
@@ -82,6 +88,9 @@ NULL_CHAR = b'\x00'
 BINARY_CHARS = [NULL_CHAR]
 FILENAME_VALID_CHARS = '.,^_-()[]0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
+RW_R__R__ = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
+RWXR_XR_X = stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
+RWXRWXRWX = stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO
 
 defaultdict = collections.defaultdict
 
@@ -183,6 +192,14 @@ def synchronized(func):
     return caller
 
 
+def iter_start_of_line(fh, chunk_size=None):
+    """
+    Iterate over fh and call readline(chunk_size)
+    """
+    for line in iter(partial(fh.readline, chunk_size), ""):
+        yield line
+
+
 def file_iter(fname, sep=None):
     """
     This generator iterates over a file and yields its lines
@@ -193,9 +210,10 @@ def file_iter(fname, sep=None):
     >>> len(lines) !=  0
     True
     """
-    for line in open(fname):
-        if line and line[0] != '#':
-            yield line.split(sep)
+    with open(fname) as fh:
+        for line in fh:
+            if line and line[0] != '#':
+                yield line.split(sep)
 
 
 def file_reader(fp, chunk_size=CHUNK_SIZE):
@@ -266,12 +284,12 @@ def xml_to_string(elem, pretty=False):
     except TypeError as e:
         # we assume this is a comment
         if hasattr(elem, 'text'):
-            return "<!-- %s -->\n" % elem.text
+            return u"<!-- %s -->\n" % elem.text
         else:
             raise e
     if xml_str and pretty:
         pretty_string = xml.dom.minidom.parseString(xml_str).toprettyxml(indent='    ')
-        return "\n".join([line for line in pretty_string.split('\n') if not re.match(r'^[\s\\nb\']*$', line)])
+        return "\n".join(line for line in pretty_string.split('\n') if not re.match(r'^[\s\\nb\']*$', line))
     return xml_str
 
 
@@ -913,8 +931,8 @@ def parse_resource_parameters(resource_param_file):
 
 
 # asbool implementation pulled from PasteDeploy
-truthy = frozenset(['true', 'yes', 'on', 'y', 't', '1'])
-falsy = frozenset(['false', 'no', 'off', 'n', 'f', '0'])
+truthy = frozenset({'true', 'yes', 'on', 'y', 't', '1'})
+falsy = frozenset({'false', 'no', 'off', 'n', 'f', '0'})
 
 
 def asbool(obj):
@@ -974,7 +992,9 @@ def listify(item, do_strip=False):
     """
     if not item:
         return []
-    elif isinstance(item, list) or isinstance(item, tuple):
+    elif isinstance(item, list):
+        return item
+    elif isinstance(item, tuple):
         return list(item)
     elif isinstance(item, string_types) and item.count(','):
         if do_strip:
@@ -1018,6 +1038,7 @@ def unicodify(value, encoding=DEFAULT_ENCODING, error='replace', strip_null=Fals
     >>> s = u'lâtín strìñg'; assert unicodify(s.encode('latin-1'), 'latin-1') == s
     >>> s = u'lâtín strìñg'; assert unicodify(s.encode('latin-1')) == u'l\ufffdt\ufffdn str\ufffd\ufffdg'
     >>> s = u'lâtín strìñg'; assert unicodify(s.encode('latin-1'), error='ignore') == u'ltn strg'
+    >>> if PY2: assert unicodify(Exception(u'¼ cup of flour'.encode('latin-1')), error='ignore') == ' cup of flour'
     """
     if value is None:
         return value
@@ -1027,7 +1048,10 @@ def unicodify(value, encoding=DEFAULT_ENCODING, error='replace', strip_null=Fals
         elif not isinstance(value, string_types) and not isinstance(value, binary_type):
             # In Python 2, value is not an instance of basestring (i.e. str or unicode)
             # In Python 3, value is not an instance of bytes or str
-            value = text_type(value)
+            try:
+                value = text_type(value)
+            except Exception:
+                value = str(value)
         # Now in Python 2, value is an instance of basestring, but may be not unicode
         # Now in Python 3, value is an instance of bytes or str
         if not isinstance(value, text_type):
@@ -1540,7 +1564,8 @@ def safe_str_cmp(a, b):
     return rv == 0
 
 
-galaxy_root_path = os.path.join(__path__[0], "..", "..", "..")
+galaxy_root_path = os.path.join(__path__[0], os.pardir, os.pardir, os.pardir)
+galaxy_samples_path = os.path.join(__path__[0], os.pardir, 'config', 'sample')
 
 
 def galaxy_directory():
@@ -1548,6 +1573,10 @@ def galaxy_directory():
     if os.path.basename(root_path) == "packages":
         root_path = os.path.abspath(os.path.join(root_path, ".."))
     return root_path
+
+
+def galaxy_samples_directory():
+    return os.path.abspath(galaxy_samples_path)
 
 
 def config_directories_from_setting(directories_setting, galaxy_root=galaxy_root_path):
@@ -1675,6 +1704,26 @@ def download_to_file(url, dest_file_path, timeout=30, chunk_size=2 ** 20):
             f.write(chunk)
 
 
+def get_executable():
+    exe = sys.executable
+    if exe.endswith('uwsgi'):
+        virtualenv = None
+        if uwsgi is not None:
+            for name in ('home', 'virtualenv', 'venv', 'pyhome'):
+                if name in uwsgi.opt:
+                    virtualenv = unicodify(uwsgi.opt[name])
+                    break
+        if virtualenv is None and 'VIRTUAL_ENV' in os.environ:
+            virtualenv = os.environ['VIRTUAL_ENV']
+        if virtualenv is not None:
+            exe = os.path.join(virtualenv, 'bin', 'python')
+        else:
+            exe = os.path.join(os.path.dirname(exe), 'python')
+            if not os.path.exists(exe):
+                exe = 'python'
+    return exe
+
+
 class ExecutionTimer(object):
 
     def __init__(self):
@@ -1682,6 +1731,30 @@ class ExecutionTimer(object):
 
     def __str__(self):
         return "(%0.3f ms)" % (self.elapsed * 1000)
+
+    @property
+    def elapsed(self):
+        return (time.time() - self.begin)
+
+
+class StructuredExecutionTimer(object):
+
+    def __init__(self, timer_id, template, **tags):
+        self.begin = time.time()
+        self.timer_id = timer_id
+        self.template = template
+        self.tags = tags
+
+    def __str__(self):
+        return self.to_str()
+
+    def to_str(self, **kwd):
+        if kwd:
+            message = string.Template(self.template).safe_substitute(kwd)
+        else:
+            message = self.template
+        log_message = message + " (%0.3f ms)" % (self.elapsed * 1000)
+        return log_message
 
     @property
     def elapsed(self):

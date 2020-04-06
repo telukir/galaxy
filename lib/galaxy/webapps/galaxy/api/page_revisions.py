@@ -7,7 +7,7 @@ from galaxy.managers.base import get_object
 from galaxy.managers.pages import PageManager
 from galaxy.model.item_attrs import UsesAnnotations
 from galaxy.web import expose_api
-from galaxy.web.base.controller import (
+from galaxy.webapps.base.controller import (
     BaseAPIController,
     SharableItemSecurityMixin,
     SharableMixin
@@ -52,8 +52,7 @@ class PageRevisionsController(BaseAPIController, SharableItemSecurityMixin, Uses
 
         :param page_id: Add revision to Page with ID=page_id
         :param payload: A dictionary containing::
-            'title'     = New title of the page
-            'content'   = New content of the page
+            'content'   = New content of new page revision
 
         :rtype:     dictionary
         :returns:   Dictionary with 'success' or 'error' element to indicate the result of the request

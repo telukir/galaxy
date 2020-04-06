@@ -2,31 +2,38 @@
     <div class="ui-thumbnails">
         <div v-if="error" class="alert alert-danger">{{ error }}</div>
         <div v-else>
-            <input
-                class="search-query parent-width"
-                name="query"
-                placeholder="search visualizations"
-                autocomplete="off"
-                type="text"
-                v-model="search"
-            />
+            <div class="search-input">
+                <input
+                    class="search-query parent-width"
+                    name="query"
+                    placeholder="search visualizations"
+                    autocomplete="off"
+                    type="text"
+                    v-model="search"
+                />
+            </div>
             <div v-for="plugin in plugins" :key="plugin.name">
                 <table v-if="match(plugin)">
                     <tr class="ui-thumbnails-item" @click="select(plugin)">
                         <td>
-                            <img v-if="plugin.logo" class="ui-thumbnails-image" :src="plugin.logo" />
+                            <img
+                                v-if="plugin.logo"
+                                alt="ui thumbnails"
+                                class="ui-thumbnails-image"
+                                :src="plugin.logo"
+                            />
                             <div v-else class="ui-thumbnails-icon fa fa-eye" />
                         </td>
                         <td>
-                            <div class="ui-thumbnails-title font-weight-bold text-dark">{{ plugin.html }}</div>
-                            <div class="ui-thumbnails-text text-dark">{{ plugin.description }}</div>
+                            <div class="ui-thumbnails-title font-weight-bold">{{ plugin.html }}</div>
+                            <div class="ui-thumbnails-text">{{ plugin.description }}</div>
                         </td>
                     </tr>
                     <tr v-if="!fixed">
                         <td />
                         <td v-if="plugin.name == name">
                             <div v-if="hdas && hdas.length > 0">
-                                <div class="font-weight-bold text-dark">Select a dataset to visualize:</div>
+                                <div class="font-weight-bold">Select a dataset to visualize:</div>
                                 <div class="ui-select">
                                     <select class="select" v-model="selected">
                                         <option v-for="file in hdas" :key="file.id" :value="file.id">{{
@@ -69,7 +76,7 @@ export default {
             selected: null,
             name: null,
             error: null,
-            fixed: false
+            fixed: false,
         };
     },
     created() {
@@ -83,15 +90,15 @@ export default {
         }
         axios
             .get(url)
-            .then(response => {
+            .then((response) => {
                 this.plugins = response.data;
             })
-            .catch(e => {
+            .catch((e) => {
                 this.error = this._errorMessage(e);
             });
     },
     methods: {
-        select: function(plugin) {
+        select: function (plugin) {
             if (this.fixed) {
                 this.create(plugin);
             } else {
@@ -100,14 +107,14 @@ export default {
                 if (history_id) {
                     axios
                         .get(`${getAppRoot()}api/plugins/${plugin.name}?history_id=${history_id}`)
-                        .then(response => {
+                        .then((response) => {
                             this.name = plugin.name;
                             this.hdas = response.data && response.data.hdas;
                             if (this.hdas && this.hdas.length > 0) {
                                 this.selected = this.hdas[0].id;
                             }
                         })
-                        .catch(e => {
+                        .catch((e) => {
                             this.error = this._errorMessage(e);
                         });
                 } else {
@@ -115,7 +122,7 @@ export default {
                 }
             }
         },
-        create: function(plugin) {
+        create: function (plugin) {
             const href = `${plugin.href}?dataset_id=${this.selected}`;
             if (plugin.target == "_top") {
                 window.location.href = href;
@@ -123,17 +130,17 @@ export default {
                 $("#galaxy_main").attr("src", href);
             }
         },
-        match: function(plugin) {
+        match: function (plugin) {
             return (
                 !this.search ||
                 plugin.name.indexOf(this.search) != -1 ||
                 (plugin.description && plugin.description.indexOf(this.search) != -1)
             );
         },
-        _errorMessage: function(e) {
+        _errorMessage: function (e) {
             const message = e && e.response && e.response.data && e.response.data.err_msg;
             return message || "Request failed for an unknown reason.";
-        }
-    }
+        },
+    },
 };
 </script>

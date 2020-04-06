@@ -1,4 +1,5 @@
 """The module defines the abstract interface for dealing tool dependency resolution plugins."""
+import errno
 from abc import (
     ABCMeta,
     abstractmethod,
@@ -95,9 +96,14 @@ class MappableDependencyResolver(object):
 
     @staticmethod
     def _mapping_file_to_list(mapping_file):
-        with open(mapping_file, "r") as f:
-            raw_mapping = yaml.safe_load(f) or []
-        return map(RequirementMapping.from_dict, raw_mapping)
+        raw_mapping = []
+        try:
+            with open(mapping_file, "r") as f:
+                raw_mapping = yaml.safe_load(f)
+        except (OSError, IOError) as exc:
+            if exc.errno != errno.ENOENT:
+                raise
+        return list(map(RequirementMapping.from_dict, raw_mapping))
 
     def _expand_mappings(self, requirement):
         for mapping in self._mappings:
@@ -259,13 +265,15 @@ class Dependency(Dictifiable):
 
 class ContainerDependency(Dependency):
 
-    dict_collection_visible_keys = Dependency.dict_collection_visible_keys + ['environment_path']
+    dict_collection_visible_keys = Dependency.dict_collection_visible_keys + ['environment_path', 'container_description', 'container_resolver']
 
-    def __init__(self, container_description, name, version):
+    def __init__(self, container_description, name=None, version=None, container_resolver=None):
+        self.container_description = container_description
         self.dependency_type = container_description.type
         self._name = name
         self._version = version
         self.environment_path = container_description.identifier
+        self.container_resolver = container_resolver
 
     @property
     def name(self):

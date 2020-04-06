@@ -9,7 +9,7 @@ from six.moves import shlex_quote
 from .commands import argv_to_str
 
 DEFAULT_DOCKER_COMMAND = "docker"
-DEFAULT_SUDO = True
+DEFAULT_SUDO = False
 DEFAULT_SUDO_COMMAND = "sudo"
 DEFAULT_HOST = None
 DEFAULT_VOLUME_MOUNT_TYPE = "rw"
@@ -82,6 +82,24 @@ def build_docker_load_command(**kwds):
     return command_shell("load", [])
 
 
+def build_docker_simple_command(
+    command,
+    docker_cmd=DEFAULT_DOCKER_COMMAND,
+    sudo=DEFAULT_SUDO,
+    sudo_cmd=DEFAULT_SUDO_COMMAND,
+    container_name=None,
+    **kwd
+):
+    command_parts = _docker_prefix(
+        docker_cmd=docker_cmd,
+        sudo=sudo,
+        sudo_cmd=sudo_cmd,
+    )
+    command_parts.append(command)
+    command_parts.append(container_name or '{CONTAINER_NAME}')
+    return " ".join(command_parts)
+
+
 def build_docker_run_command(
     container_command,
     image,
@@ -102,6 +120,8 @@ def build_docker_run_command(
     auto_rm=DEFAULT_AUTO_REMOVE,
     set_user=DEFAULT_SET_USER,
     host=DEFAULT_HOST,
+    guest_ports=False,
+    container_name=None
 ):
     command_parts = _docker_prefix(
         docker_cmd=docker_cmd,
@@ -118,15 +138,18 @@ def build_docker_run_command(
         # e.g. -e "GALAXY_SLOTS=$GALAXY_SLOTS"
         # These are environment variable expansions so we don't quote these.
         command_parts.extend(["-e", env_directive])
+    if guest_ports is True:
+        # When is True, expose all ports
+        command_parts.append("-P")
+    elif guest_ports:
+        if not isinstance(guest_ports, list):
+            guest_ports = [guest_ports]
+        for guest_port in guest_ports:
+            command_parts.extend(["-p", guest_port])
+    if container_name:
+        command_parts.extend(["--name", container_name])
     for volume in volumes:
-        # These are environment variable expansions so we don't quote these.
-        volume_str = str(volume)
-        if "$" not in volume_str:
-            volume_for_cmd_line = shlex_quote(volume_str)
-        else:
-            # e.g. $_GALAXY_JOB_TMP_DIR:$_GALAXY_JOB_TMP_DIR:rw so don't single quote.
-            volume_for_cmd_line = '"%s"' % volume_str
-        command_parts.extend(["-v", volume_for_cmd_line])
+        command_parts.extend(["-v", str(volume)])
     if volumes_from:
         command_parts.extend(["--volumes-from", shlex_quote(str(volumes_from))])
     if memory:
@@ -192,3 +215,25 @@ def _docker_prefix(
     if host:
         command_parts.extend(["-H", host])
     return command_parts
+
+
+def parse_port_text(port_text):
+    """
+
+    >>> slurm_ports = parse_port_text("8888/tcp -> 0.0.0.0:32769")
+    >>> slurm_ports[8888]['host']
+    '0.0.0.0'
+    """
+    ports = None
+    if port_text is not None:
+        ports = {}
+        for line in port_text.strip().split('\n'):
+            if " -> " not in line:
+                raise Exception("Cannot parse host and port from line [%s]" % line)
+            tool, host = line.split(" -> ", 1)
+            hostname, port = host.split(':')
+            port = int(port)
+            tool_p, tool_prot = tool.split("/")
+            tool_p = int(tool_p)
+            ports[tool_p] = dict(tool_port=tool_p, host=hostname, port=port, protocol=tool_prot)
+    return ports

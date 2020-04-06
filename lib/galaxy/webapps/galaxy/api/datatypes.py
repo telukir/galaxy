@@ -10,7 +10,7 @@ from galaxy.util import (
     unicodify
 )
 from galaxy.web import expose_api_anonymous_and_sessionless
-from galaxy.web.base.controller import BaseAPIController
+from galaxy.webapps.base.controller import BaseAPIController
 
 log = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ class DatatypesController(BaseAPIController):
                     visit_bases(types, base)
             for c in classes:
                 n = c.__module__ + "." + c.__name__
-                types = set([n])
+                types = {n}
                 visit_bases(types, c)
                 class_to_classes[n] = dict((t, True) for t in types)
             return dict(ext_to_class_name=ext_to_class_name, class_to_classes=class_to_classes)

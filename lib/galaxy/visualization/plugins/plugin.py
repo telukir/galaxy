@@ -71,10 +71,10 @@ class VisualizationPlugin(ServesTemplatesPluginMixin):
         self.name = name
         self.config = config
         base_url = context.get('base_url', '')
-        self.base_url = '/'.join([base_url, self.name]) if base_url else self.name
-        self.static_path = os.path.join(self.path.replace('./config', './static'), 'static')
-        if os.path.exists(os.path.join(self.static_path, 'logo.png')):
-            self.config['logo'] = '/'.join([self.static_path, 'logo.png'])
+        self.base_url = '/'.join((base_url, self.name)) if base_url else self.name
+        self.static_path = self._get_static_path(self.path)
+        if self.static_path and os.path.exists(os.path.join(self.static_path, 'logo.png')):
+            self.config['logo'] = self.static_path + '/logo.png'
         template_cache_dir = context.get('template_cache_dir', None)
         additional_template_paths = context.get('additional_template_paths', [])
         self._set_up_template_plugin(template_cache_dir, additional_template_paths=additional_template_paths)
@@ -126,6 +126,13 @@ class VisualizationPlugin(ServesTemplatesPluginMixin):
         if self.name in self.app.visualizations_registry.BUILT_IN_VISUALIZATIONS:
             return url_for(controller='visualization', action=self.name)
         return url_for('visualization_plugin', visualization_name=self.name)
+
+    def _get_static_path(self, path):
+        if '/config/' in path:
+            match = path.split('/config/')[-1]
+            return os.path.join('./static', match, 'static')
+        else:
+            log.debug('Visualization has no static path: %s.' % path)
 
     def _get_saved_visualization_config(self, visualization, revision=None, **kwargs):
         """

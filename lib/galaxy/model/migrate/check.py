@@ -11,6 +11,8 @@ from sqlalchemy import (
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy_utils import create_database, database_exists
 
+from galaxy.model import mapping
+
 log = logging.getLogger(__name__)
 
 # path relative to galaxy
@@ -18,7 +20,7 @@ migrate_repository_directory = os.path.abspath(os.path.dirname(__file__)).replac
 migrate_repository = repository.Repository(migrate_repository_directory)
 
 
-def create_or_verify_database(url, galaxy_config_file, engine_options={}, app=None):
+def create_or_verify_database(url, galaxy_config_file, engine_options={}, app=None, map_install_models=False):
     """
     Check that the database is use-able, possibly creating it if empty (this is
     the only time we automatically create tables, otherwise we force the
@@ -59,8 +61,23 @@ def create_or_verify_database(url, galaxy_config_file, engine_options={}, app=No
         # Apply all scripts to get to current version
         migrate_to_current_version(engine, db_schema)
 
+    def migrate_from_scratch():
+        log.info("Creating new database from scratch, skipping migrations")
+        current_version = migrate_repository.version().version
+        mapping.init(file_path='/tmp', url=url, map_install_models=map_install_models, create_tables=True)
+        schema.ControlledSchema.create(engine, migrate_repository, version=current_version)
+        db_schema = schema.ControlledSchema(engine, migrate_repository)
+        assert db_schema.version == current_version
+        migrate()
+        if app:
+            # skips the tool migration process.
+            app.new_installation = True
+
     meta = MetaData(bind=engine)
-    if new_database or (app and getattr(app.config, 'database_auto_migrate', False)):
+    if new_database:
+        migrate_from_scratch()
+        return
+    elif app and getattr(app.config, 'database_auto_migrate', False):
         migrate()
         return
 
@@ -68,12 +85,9 @@ def create_or_verify_database(url, galaxy_config_file, engine_options={}, app=No
     try:
         Table("dataset", meta, autoload=True)
     except NoSuchTableError:
-        # No 'dataset' table means a completely uninitialized database.  If we have an app, we'll
-        # set its new_installation setting to True so the tool migration process will be skipped.
-        if app:
-            app.new_installation = True
+        # No 'dataset' table means a completely uninitialized database.
         log.info("No database, initializing")
-        migrate()
+        migrate_from_scratch()
         return
     try:
         hda_table = Table("history_dataset_association", meta, autoload=True)

@@ -7,13 +7,12 @@ import logging
 import os
 
 from galaxy.managers import configuration, users
-from galaxy.queue_worker import send_control_task
 from galaxy.web import (
     expose_api,
     expose_api_anonymous_and_sessionless,
     require_admin
 )
-from galaxy.web.base.controller import BaseAPIController
+from galaxy.webapps.base.controller import BaseAPIController
 
 log = logging.getLogger(__name__)
 
@@ -87,8 +86,8 @@ class ConfigurationController(BaseAPIController):
         serialized = serializer.serialize_to_view(self.app.config, view=view, keys=keys, default_view=default_view)
         return serialized
 
-    @expose_api
     @require_admin
+    @expose_api
     def dynamic_tool_confs(self, trans):
         # WARNING: If this method is ever changed so as not to require admin privileges, update the nginx proxy
         # documentation, since this path is used as an authentication-by-proxy method for securing other paths on the
@@ -96,8 +95,8 @@ class ConfigurationController(BaseAPIController):
         confs = self.app.toolbox.dynamic_confs(include_migrated_tool_conf=True)
         return list(map(_tool_conf_to_dict, confs))
 
-    @expose_api
     @require_admin
+    @expose_api
     def decode_id(self, trans, encoded_id, **kwds):
         """Decode a given id."""
         decoded_id = None
@@ -108,8 +107,8 @@ class ConfigurationController(BaseAPIController):
             decoded_id = trans.security.decode_id(encoded_id)
         return {"decoded_id": decoded_id}
 
-    @expose_api
     @require_admin
+    @expose_api
     def tool_lineages(self, trans):
         rval = []
         for id, tool in self.app.toolbox.tools():
@@ -125,14 +124,14 @@ class ConfigurationController(BaseAPIController):
             rval.append(entry)
         return rval
 
-    @expose_api
     @require_admin
+    @expose_api
     def reload_toolbox(self, trans, **kwds):
         """
         PUT /api/configuration/toolbox
         Reload the Galaxy toolbox (but not individual tools).
         """
-        send_control_task(self.app.toolbox.app, 'reload_toolbox')
+        self.app.queue_worker.send_control_task('reload_toolbox')
 
 
 def _tool_conf_to_dict(conf):

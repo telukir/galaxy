@@ -4,21 +4,21 @@ import tempfile
 
 import pytest
 
-from base import integration_util  # noqa: I100,I202
-from galaxy.datatypes.registry import Registry  # noqa: I201
+from galaxy.datatypes.registry import Registry
 from galaxy.util.checkers import (
     is_bz2,
     is_gzip,
     is_zip
 )
 from galaxy.util.hash_util import md5_hash_file
+from galaxy_test.driver import integration_util
 from .test_upload_configuration_options import BaseUploadContentConfigurationInstance
 
 SCRIPT_DIRECTORY = os.path.abspath(os.path.dirname(__file__))
 TEST_FILE_DIR = '%s/../../lib/galaxy/datatypes/test' % SCRIPT_DIRECTORY
 TestData = collections.namedtuple('UploadDatatypesData', 'path datatype uploadable')
 GALAXY_ROOT = os.path.abspath('%s/../../' % SCRIPT_DIRECTORY)
-DATATYPES_CONFIG = os.path.join(GALAXY_ROOT, 'config/datatypes_conf.xml.sample')
+DATATYPES_CONFIG = os.path.join(GALAXY_ROOT, 'lib/galaxy/config/sample/datatypes_conf.xml.sample')
 PARENT_SNIFFER_MAP = {'fastqsolexa': 'fastq'}
 
 

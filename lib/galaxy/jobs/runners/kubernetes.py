@@ -8,6 +8,8 @@ import os
 import re
 from time import sleep
 
+import yaml
+
 from galaxy import model
 from galaxy.jobs.runners import (
     AsynchronousJobRunner,
@@ -45,6 +47,9 @@ class KubernetesJobRunner(AsynchronousJobRunner):
             k8s_use_service_account=dict(map=bool, default=False),
             k8s_persistent_volume_claims=dict(map=str),
             k8s_namespace=dict(map=str, default="default"),
+            k8s_pod_priority_class=dict(map=str, default=None),
+            k8s_affinity=dict(map=str, default=None),
+            k8s_tolerations=dict(map=str, default=None),
             k8s_galaxy_instance_id=dict(map=str),
             k8s_timeout_seconds_job_deletion=dict(map=int, valid=lambda x: int > 0, default=30),
             k8s_job_api_version=dict(map=str, default=DEFAULT_JOB_API_VERSION),
@@ -57,9 +62,10 @@ class KubernetesJobRunner(AsynchronousJobRunner):
             k8s_default_requests_memory=dict(map=str, default=None),
             k8s_default_limits_cpu=dict(map=str, default=None),
             k8s_default_limits_memory=dict(map=str, default=None),
+            k8s_cleanup_job=dict(map=str, valid=lambda s: s in {"onsuccess", "always", "never"}, default="always"),
             k8s_pod_retries=dict(map=int, valid=lambda x: int >= 0, default=3),
             k8s_pod_retrials=dict(map=int, valid=lambda x: int >= 0, default=3),
-            k8s_walltime_limit=dict(map=int, valid=lambda x: int x >= 0, default=172800))
+            k8s_walltime_limit=dict(map=int, valid=lambda x: int(x) >= 0, default=172800))
 
         if 'runner_param_specs' not in kwargs:
             kwargs['runner_param_specs'] = dict()
@@ -221,8 +227,10 @@ class KubernetesJobRunner(AsynchronousJobRunner):
         return produce_unique_k8s_job_name(app_prefix='galaxy', instance_id=instance_id, job_id=galaxy_internal_job_id)
 
     def __get_k8s_job_spec(self, ajs):
-        """Creates the k8s Job spec. For a Job spec, the only requirement is to have a .spec.template."""
-        k8s_job_spec = {"template": self.__get_k8s_job_spec_template(ajs)}
+        """Creates the k8s Job spec. For a Job spec, the only requirement is to have a .spec.template.
+        If the job hangs around unlimited it will be ended after k8s wall time limit, which sets activeDeadlineSeconds"""
+        k8s_job_spec = {"template": self.__get_k8s_job_spec_template(ajs),
+                        "activeDeadlineSeconds": int(self.runner_params['k8s_walltime_limit'])}
         return k8s_job_spec
 
     def __get_k8s_job_spec_template(self, ajs):
@@ -236,7 +244,10 @@ class KubernetesJobRunner(AsynchronousJobRunner):
             "spec": {
                 "volumes": self.runner_params['k8s_mountable_volumes'],
                 "restartPolicy": self.__get_k8s_restart_policy(ajs.job_wrapper),
-                "containers": self.__get_k8s_containers(ajs)
+                "containers": self.__get_k8s_containers(ajs),
+                "priorityClassName": self.runner_params['k8s_pod_priority_class'],
+                "tolerations": yaml.safe_load(self.runner_params['k8s_tolerations'] or "[]"),
+                "affinity": yaml.safe_load(self.runner_params['k8s_affinity'] or "{}")
             }
         }
         # TODO include other relevant elements that people might want to use from
@@ -283,7 +294,13 @@ class KubernetesJobRunner(AsynchronousJobRunner):
         resources = self.__get_resources(ajs.job_wrapper)
         if resources:
             envs = []
-            if 'limits' in resources:
+            if 'requests' in resources:
+                requests = resources['requests']
+                if 'memory' in requests:
+                    envs.append({'name': 'GALAXY_MEMORY_MB', 'value': str(ByteSize(requests['memory']).to_unit('M', as_string=False))})
+                if 'cpu' in requests:
+                    envs.append({'name': 'GALAXY_SLOTS', 'value': str(int(math.ceil(float(requests['cpu']))))})
+            elif 'limits' in resources:
                 limits = resources['limits']
                 if 'memory' in limits:
                     envs.append({'name': 'GALAXY_MEMORY_MB', 'value': str(ByteSize(limits['memory']).to_unit('M', as_string=False))})
@@ -354,7 +371,7 @@ class KubernetesJobRunner(AsynchronousJobRunner):
         job_destinantion = job_wrapper.job_destination
 
         if 'limits_cpu' in job_destinantion.params:
-            return job_destinantion.params['limits_cpu']    def stop_job(self, job_wrapper):
+            return job_destinantion.params['limits_cpu']
         return None
 
     def __transform_memory_value(self, mem_value):
@@ -404,7 +421,6 @@ class KubernetesJobRunner(AsynchronousJobRunner):
             active = 0
             failed = 0
 
-            max_pod_retries = 1
             if 'max_pod_retries' in job_destination.params:
                 max_pod_retries = int(job_destination.params['max_pod_retries'])
             elif 'k8s_pod_retries' in self.runner_params:
@@ -415,7 +431,16 @@ class KubernetesJobRunner(AsynchronousJobRunner):
             elif 'k8s_pod_retrials' in self.runner_params:
                 # For backward compatibility
                 max_pod_retries = int(self.runner_params['max_pod_retrials'])
+            else:
+                max_pod_retries = 1
 
+            # Check if job.obj['status'] is empty,
+            # return job_state unchanged if this is the case
+            # as probably this means that the k8s API server hasn't
+            # had time to fill in the object status since the
+            # job was created only too recently.
+            if len(job.obj['status']) == 0:
+                return job_state
             if 'succeeded' in job.obj['status']:
                 succeeded = job.obj['status']['succeeded']
             if 'active' in job.obj['status']:
@@ -428,25 +453,27 @@ class KubernetesJobRunner(AsynchronousJobRunner):
                 job_state.running = False
                 self.mark_as_finished(job_state)
                 return None
-            elif failed > 0 and self.__job_failed_due_to_low_memory(job_state):
-                return self._handle_job_failure(job, job_state, reason="OOM")
             elif active > 0 and failed <= max_pod_retries:
                 if not job_state.running:
                     job_state.running = True
                     job_state.job_wrapper.change_state(model.Job.states.RUNNING)
                 return job_state
-            elif failed > max_pod_retries:
-                return self._handle_job_failure(job, job_state)
             elif job_state.job_wrapper.get_job().state == model.Job.states.DELETED:
-                # Job has been deleted via stop_job, cleanup and remove from watched_jobs by returning `None`
+                # Job has been deleted via stop_job and job has not been deleted,
+                # remove from watched_jobs by returning `None`
                 if job_state.job_wrapper.cleanup_job in ("always", "onsuccess"):
                     job_state.job_wrapper.cleanup()
                 return None
             else:
-                # We really shouldn't reach this point, but we might if the job has been killed by the kubernetes admin
-                log.info("Kubernetes job '%s' not classified as succ., active or failed. Full Job object: \n%s", job.name, job.obj)
+                return self._handle_job_failure(job, job_state)
 
         elif len(jobs.response['items']) == 0:
+            if job_state.job_wrapper.get_job().state == model.Job.states.DELETED:
+                # Job has been deleted via stop_job and job has been deleted,
+                # cleanup and remove from watched_jobs by returning `None`
+                if job_state.job_wrapper.cleanup_job in ("always", "onsuccess"):
+                    job_state.job_wrapper.cleanup()
+                return None
             # there is no job responding to this job_id, it is either lost or something happened.
             log.error("No Jobs are available under expected selector app=%s", job_state.job_id)
             with open(job_state.error_file, 'w') as error_file:
@@ -461,19 +488,44 @@ class KubernetesJobRunner(AsynchronousJobRunner):
             self.mark_as_failed(job_state)
             return job_state
 
-    def _handle_job_failure(self, job, job_state, reason=None):
+    def _handle_job_failure(self, job, job_state):
+        # Figure out why job has failed
         with open(job_state.error_file, 'a') as error_file:
-            if reason == "OOM":
+            if self.__job_failed_due_to_low_memory(job_state):
                 error_file.write("Job killed after running out of memory. Try with more memory.\n")
                 job_state.fail_message = "Tool failed due to insufficient memory. Try with more memory."
                 job_state.runner_state = JobState.runner_states.MEMORY_LIMIT_REACHED
+            elif self.__job_failed_due_to_walltime_limit(job):
+                error_file.write("DeadlineExceeded")
+                job_state.fail_message = "Job was active longer than specified deadline"
+                job_state.runner_state = JobState.runner_states.WALLTIME_REACHED
             else:
                 error_file.write("Exceeded max number of Kubernetes pod retrials allowed for job\n")
                 job_state.fail_message = "More pods failed than allowed. See stdout for pods details."
         job_state.running = False
         self.mark_as_failed(job_state)
-        job.scale(replicas=0)
+        self.__cleanup_k8s_job(job)
         return None
+
+    def __cleanup_k8s_job(self, job):
+        k8s_cleanup_job = self.runner_params['k8s_cleanup_job']
+        job_failed = (job.obj['status']['failed'] > 0
+                      if 'failed' in job.obj['status'] else False)
+        # Scale down the job just in case even if cleanup is never
+        job.scale(replicas=0)
+        if (k8s_cleanup_job == "always" or
+                (k8s_cleanup_job == "onsuccess" and not job_failed)):
+            delete_options = {
+                "apiVersion": "v1",
+                "kind": "DeleteOptions",
+                "propagationPolicy": "Background"
+            }
+            r = job.api.delete(json=delete_options, **job.api_kwargs())
+            job.api.raise_for_status(r)
+
+    def __job_failed_due_to_walltime_limit(self, job):
+        conditions = job.obj['status'].get('conditions') or []
+        return any(True for c in conditions if c['type'] == 'Failed' and c['reason'] == 'DeadlineExceeded')
 
     def __job_failed_due_to_low_memory(self, job_state):
         """
@@ -484,8 +536,10 @@ class KubernetesJobRunner(AsynchronousJobRunner):
 
         pods = Pod.objects(self._pykube_api).filter(selector="app=%s" % job_state.job_id,
                                                     namespace=self.runner_params['k8s_namespace'])
-        pod = Pod(self._pykube_api, pods.response['items'][0])
+        if not pods.response['items']:
+            return False
 
+        pod = Pod(self._pykube_api, pods.response['items'][0])
         if pod.obj['status']['phase'] == "Failed" and \
                 pod.obj['status']['containerStatuses'][0]['state']['terminated']['reason'] == "OOMKilled":
             return True
@@ -499,9 +553,9 @@ class KubernetesJobRunner(AsynchronousJobRunner):
             jobs = Job.objects(self._pykube_api).filter(
                 selector="app=" + self.__produce_unique_k8s_job_name(job.get_id_tag()),
                 namespace=self.runner_params['k8s_namespace'])
-            if len(jobs.response['items']) >= 0:
+            if len(jobs.response['items']) > 0:
                 job_to_delete = Job(self._pykube_api, jobs.response['items'][0])
-                job_to_delete.scale(replicas=0)
+                self.__cleanup_k8s_job(job_to_delete)
             # TODO assert whether job parallelism == 0
             # assert not job_to_delete.exists(), "Could not delete job,"+job.job_runner_external_id+" it still exists"
             log.debug("(%s/%s) Terminated at user's request" % (job.id, job.job_runner_external_id))
@@ -533,3 +587,12 @@ class KubernetesJobRunner(AsynchronousJobRunner):
             ajs.old_state = model.Job.states.QUEUED
             ajs.running = False
             self.monitor_queue.put(ajs)
+
+    def finish_job(self, job_state):
+        super(KubernetesJobRunner, self).finish_job(job_state)
+        jobs = Job.objects(self._pykube_api).filter(selector="app=" + job_state.job_id,
+                                                    namespace=self.runner_params['k8s_namespace'])
+        # If more than one job matches selector, leave all jobs intact as it's a configuration error
+        if len(jobs.response['items']) == 1:
+            job = Job(self._pykube_api, jobs.response['items'][0])
+            self.__cleanup_k8s_job(job)

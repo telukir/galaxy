@@ -2,6 +2,9 @@
 
 set -e
 
+# Don't display the pip progress bar when running under CI
+[ "$CI" = 'true' ] && export PIP_PROGRESS_BAR=off
+
 # Change to packages directory.
 cd "$(dirname "$0")"
 
@@ -22,19 +25,27 @@ PACKAGE_DIRS=(
     tool_util
     data
     job_execution
+    auth
+    web_stack
+    web_framework
+    app
+    web_apps
 )
 # containers has no tests, tool_util not yet working 100%,
 # data has many problems quota, tool shed install database, etc..
-RUN_TESTS=(1 1 1 0 0 0 0 1)
-
+RUN_TESTS=(1 1 1 1 1 1 1 1 0 0 0 0)
 for ((i=0; i<${#PACKAGE_DIRS[@]}; i++)); do
     package_dir=${PACKAGE_DIRS[$i]}
     run_tests=${RUN_TESTS[$i]}
 
     cd "$package_dir"
     pip install -e .
+    # Install extras (if needed)
     if [ "$package_dir" = "util" ]; then
         pip install -e '.[template,jstree]'
+    fi
+    if [ "$package_dir" = "tool_util"]; then
+        pip install -e '.[condatesting]'
     fi
 
     if [[ "$run_tests" == "1" ]]; then

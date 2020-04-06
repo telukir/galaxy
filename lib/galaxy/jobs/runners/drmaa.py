@@ -18,7 +18,10 @@ from galaxy.jobs.runners import (
     AsynchronousJobRunner,
     AsynchronousJobState
 )
-from galaxy.util import asbool
+from galaxy.util import (
+    asbool,
+    unicodify,
+)
 
 drmaa = None
 
@@ -26,7 +29,7 @@ log = logging.getLogger(__name__)
 
 __all__ = ('DRMAAJobRunner',)
 
-RETRY_EXCEPTIONS_LOWER = frozenset(['invalidjobexception', 'internalexception'])
+RETRY_EXCEPTIONS_LOWER = frozenset({'invalidjobexception', 'internalexception'})
 
 
 class DRMAAJobRunner(AsynchronousJobRunner):
@@ -148,6 +151,8 @@ class DRMAAJobRunner(AsynchronousJobRunner):
 
         # Avoid a jt.exitCodePath for now - it's only used when finishing.
         native_spec = job_destination.params.get('nativeSpecification', None)
+        if native_spec is None:
+            native_spec = job_destination.params.get('native_specification', None)
         if native_spec is not None:
             jt['nativeSpecification'] = native_spec
 
@@ -333,6 +338,9 @@ class DRMAAJobRunner(AsynchronousJobRunner):
                     state = ajs.old_state
                 else:
                     continue
+            if ajs.running:
+                # TODO: stop checking at some point
+                ajs.job_wrapper.check_for_entry_points()
             if ajs.check_limits():
                 self.work_queue.put((self.fail_job, ajs))
                 continue
@@ -402,7 +410,8 @@ class DRMAAJobRunner(AsynchronousJobRunner):
         log.info("Running command %s" % command)
         p = subprocess.Popen(command,
                              shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        (stdoutdata, stderrdata) = p.communicate()
+        stdoutdata, stderrdata = p.communicate()
+        stdoutdata, stderrdata = unicodify(stdoutdata).strip(), unicodify(stderrdata).strip()
         exitcode = p.returncode
         # os.unlink(jobtemplate_filename)
         if exitcode != 0:

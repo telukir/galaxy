@@ -115,7 +115,7 @@ export function create_chart(inp_data, name, time, title) {
             curr_margin += +(i * barWidth);
             return `translate(${curr_margin},${margin.top})`;
         })
-        .on("mouseenter", d => {
+        .on("mouseenter", (d) => {
             // Show tool tip
             var i = 1;
             var size = d;
@@ -143,7 +143,7 @@ export function create_chart(inp_data, name, time, title) {
                 .attr("height", "15px")
                 .attr("fill", "#ebd9b2");
         })
-        .on("mouseleave", d => {
+        .on("mouseleave", (d) => {
             // Remove tool tip
             d3.select(currentEvent.target.parentElement)
                 .select(".tool_tip")
@@ -178,9 +178,7 @@ export function create_chart(inp_data, name, time, title) {
             var m_x = margin.left;
             var m_y = margin.top + height;
             var l_x = m_x + width;
-            var l_y = m_y;
-
-            return `M${m_x} ${m_y} L ${l_x} ${l_y}`;
+            return `M${m_x} ${m_y} L ${l_x} ${m_y}`;
         });
 
     // Declare how high the y axis goes
@@ -191,7 +189,7 @@ export function create_chart(inp_data, name, time, title) {
         .axis()
         .scale(y)
         .orient("left")
-        .tickFormat(d => d3.round(d * d3.max(data), 0));
+        .tickFormat((d) => d3.round(d * d3.max(data), 0));
 
     // Put the y axis on the chart
     chart
@@ -212,16 +210,14 @@ export function create_chart(inp_data, name, time, title) {
             var axis = d3.select(`#y_${name}`).node();
             var left_pad = margin.left - axis.getBoundingClientRect().width - 5;
             var top_pad = margin.top + axis.getBoundingClientRect().height / 2 - 30;
-            var trans = `translate(${left_pad},${top_pad})rotate(-90)`;
-
-            return trans;
+            return `translate(${left_pad},${top_pad})rotate(-90)`;
         })
         .text("Number of Jobs");
 
     // Add color to the chart's bars
     bar.append("rect")
-        .attr("y", d => height - d * zoom)
-        .attr("height", d => d * zoom)
+        .attr("y", (d) => height - d * zoom)
+        .attr("height", (d) => d * zoom)
         .attr("width", barWidth - 1);
 
     var first = false;
@@ -303,12 +299,9 @@ export function create_chart(inp_data, name, time, title) {
 
                 return time;
             })
-            .attr("transform", function(d, i) {
+            .attr("transform", function (d, i) {
                 var text_height = height;
-                var this_width = d3
-                    .select(this)
-                    .node()
-                    .getBBox().width;
+                var this_width = d3.select(this).node().getBBox().width;
 
                 if (hours_array[i].getDate() != curr_day) {
                     if (!first) {
@@ -399,12 +392,9 @@ export function create_chart(inp_data, name, time, title) {
 
                 return time;
             })
-            .attr("transform", function(d, i) {
+            .attr("transform", function (d, i) {
                 var text_height = height;
-                var this_width = d3
-                    .select(this)
-                    .node()
-                    .getBBox().width;
+                var this_width = d3.select(this).node().getBBox().width;
 
                 if (days_array[i].getMonth() != curr_month) {
                     if (!first) {
@@ -422,10 +412,7 @@ export function create_chart(inp_data, name, time, title) {
     }
 
     // Put an invisible tool tip on the chart
-    chart
-        .append("g")
-        .attr("class", "tool_tip")
-        .append("rect");
+    chart.append("g").attr("class", "tool_tip").append("rect");
     chart.select(".tool_tip").append("text");
 
     // Initialize initial zoomed charts
@@ -481,7 +468,7 @@ export function create_histogram(inp_data, name, title) {
     // Used for y axis and bar initialization
     var y = d3.scale
         .linear()
-        .domain([0, d3.max(data, d => d.y)])
+        .domain([0, d3.max(data, (d) => d.y)])
         .range([height, 0]);
 
     // Function for zooming in and out of charts
@@ -505,7 +492,7 @@ export function create_histogram(inp_data, name, title) {
     }
 
     // Formatter for x axis times (converting minutes to HH:MM).
-    var formatMinutes = d => {
+    var formatMinutes = (d) => {
         var hours = Math.floor(d / 60);
         var minutes = Math.floor(d - hours * 60);
 
@@ -543,8 +530,8 @@ export function create_histogram(inp_data, name, title) {
         .enter()
         .append("g")
         .attr("class", "bar")
-        .attr("transform", d => `translate(${+x(d.x) + margin.left},${+y(d.y) + margin.top})`)
-        .on("mouseenter", d => {
+        .attr("transform", (d) => `translate(${+x(d.x) + margin.left},${+y(d.y) + margin.top})`)
+        .on("mouseenter", (d) => {
             // Show tool tip
             var i = 0;
 
@@ -599,14 +586,10 @@ export function create_histogram(inp_data, name, title) {
     bar.append("rect")
         .attr("x", 1)
         .attr("width", bar_x - 1)
-        .attr("height", d => height - y(d.y));
+        .attr("height", (d) => height - y(d.y));
 
     // Create x axis
-    var xAxis = d3.svg
-        .axis()
-        .scale(x)
-        .orient("bottom")
-        .tickFormat(formatMinutes);
+    var xAxis = d3.svg.axis().scale(x).orient("bottom").tickFormat(formatMinutes);
 
     // Add x axis to chart
     chart
@@ -625,17 +608,12 @@ export function create_histogram(inp_data, name, title) {
             var axis = d3.select(`#x_${name}`).node();
             var left_pad = margin.left + axis.getBoundingClientRect().width / 2 + 30;
             var top_pad = margin.top + height + axis.getBoundingClientRect().height + 10;
-            var trans = `translate(${left_pad},${top_pad})`;
-
-            return trans;
+            return `translate(${left_pad},${top_pad})`;
         })
         .text("ETA - hrs:mins");
 
     // Create y axis
-    var yAxis = d3.svg
-        .axis()
-        .scale(y)
-        .orient("left");
+    var yAxis = d3.svg.axis().scale(y).orient("left");
 
     // Add y axis to chart
     chart
@@ -654,16 +632,11 @@ export function create_histogram(inp_data, name, title) {
             var axis = d3.select(`#y_${name}`).node();
             var left_pad = margin.left - axis.getBoundingClientRect().width - 5;
             var top_pad = margin.top + axis.getBoundingClientRect().height / 2 - 30;
-            var trans = `translate(${left_pad},${top_pad})rotate(-90)`;
-
-            return trans;
+            return `translate(${left_pad},${top_pad})rotate(-90)`;
         })
         .text("Number of Jobs");
 
     // Put an invisible tool tip on the chart
-    chart
-        .append("g")
-        .attr("class", "tool_tip")
-        .append("rect");
+    chart.append("g").attr("class", "tool_tip").append("rect");
     chart.select(".tool_tip").append("text");
 }

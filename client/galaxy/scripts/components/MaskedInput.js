@@ -1,21 +1,21 @@
-import BInput from "bootstrap-vue/es/components/form-input/form-input";
+import { BFormInput } from "bootstrap-vue/src/components/form-input";
 import { createMask } from "imask";
 
 export default {
-    extends: BInput,
+    extends: BFormInput,
     props: {
         mask: {
             type: String,
             required: false,
-            default: ""
-        }
+            default: "",
+        },
     },
     computed: {
         masker() {
             return createMask({
-                mask: this.mask
+                mask: this.mask,
             });
-        }
+        },
     },
     methods: {
         getFormatted(value) {
@@ -24,6 +24,6 @@ export default {
                 return this.masker.resolve(result);
             }
             return result;
-        }
-    }
+        },
+    },
 };

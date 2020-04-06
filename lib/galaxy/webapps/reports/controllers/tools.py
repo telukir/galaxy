@@ -11,7 +11,7 @@ from galaxy.util import (
     restore_text,
     unicodify
 )
-from galaxy.web.base.controller import BaseUIController, web
+from galaxy.webapps.base.controller import BaseUIController, web
 
 
 log = logging.getLogger(__name__)
@@ -322,7 +322,7 @@ class Tools(BaseUIController):
 
         spaces = [' ', '\t', '    ']
         for key in keys:
-            new_key = '</br>'.join([_ for _ in key.split('\n') if _ and _ not in spaces])
+            new_key = '</br>'.join(_ for _ in key.split('\n') if _ and _ not in spaces)
             if len(new_key) >= 100:
                 to_replace = []
                 words = key.split('\n')

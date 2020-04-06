@@ -7,14 +7,15 @@ import unittest
 import mock
 from pykwalify.core import Core
 
+from galaxy.job_metrics import JobMetrics
 from galaxy.jobs import JobConfiguration
 from galaxy.util import bunch
 from galaxy.web_stack import ApplicationStack, UWSGIApplicationStack
 
 # File would be slightly more readable if contents were embedded directly, but
 # there are advantages to testing the documentation/examples.
-SIMPLE_JOB_CONF = os.path.join(os.path.dirname(__file__), "..", "..", "..", "config", "job_conf.xml.sample_basic")
-ADVANCED_JOB_CONF = os.path.join(os.path.dirname(__file__), "..", "..", "..", "config", "job_conf.xml.sample_advanced")
+SIMPLE_JOB_CONF = os.path.join(os.path.dirname(__file__), "..", "..", "..", "lib", "galaxy", "config", "sample", "job_conf.xml.sample_basic")
+ADVANCED_JOB_CONF = os.path.join(os.path.dirname(__file__), "..", "..", "..", "lib", "galaxy", "config", "sample", "job_conf.xml.sample_advanced")
 ADVANCED_JOB_CONF_YAML = os.path.join(os.path.dirname(__file__), "job_conf.sample_advanced.yml")
 CONDITIONAL_RUNNER_JOB_CONF = os.path.join(os.path.dirname(__file__), "conditional_runners_job_conf.xml")
 HANDLER_TEMPLATE_JOB_CONF = os.path.join(os.path.dirname(__file__), "handler_template_job_conf.xml")
@@ -51,7 +52,7 @@ class BaseJobConfXmlParserTestCase(unittest.TestCase):
         if not self._app:
             self._app = bunch.Bunch(
                 config=self.config,
-                job_metrics=MockJobMetrics(),
+                job_metrics=JobMetrics(),
                 application_stack=self.application_stack
             )
         return self._app
@@ -83,11 +84,11 @@ class BaseJobConfXmlParserTestCase(unittest.TestCase):
         template = {
             'assign_with': ' assign_with="%s"' % assign_with if assign_with is not None else '',
             'default': ' default="%s"' % default if default is not None else '',
-            'handlers': '\n'.join([
+            'handlers': '\n'.join(
                 '<handler id="{id}"{tags}/>'.format(
                     id=x['id'],
                     tags=' tags="%s"' % x['tags'] if 'tags' in x else ''
-                ) for x in handlers]),
+                ) for x in handlers),
         }
         self._job_configuration_base_pools = base_pools
         self._write_config_from(HANDLER_TEMPLATE_JOB_CONF, template=template)
@@ -281,6 +282,16 @@ class SimpleJobConfXmlParserTestCase(BaseJobConfXmlParserTestCase):
 
 class AdvancedJobConfXmlParserTestCase(BaseJobConfXmlParserTestCase):
 
+    def test_disable_job_metrics(self):
+        self._with_advanced_config()
+        self.job_config.destinations["multicore_local"]
+        assert len(self.app.job_metrics.job_instrumenters["multicore_local"].plugins) == 0
+
+    def test_default_job_metrics(self):
+        self._with_advanced_config()
+        self.job_config.destinations["pbs_longjobs"]
+        assert self.app.job_metrics.job_instrumenters["pbs_longjobs"] == self.app.job_metrics.default_job_instrumenter
+
     def test_load_destination_params(self):
         self._with_advanced_config()
         pbs_dest = self.job_config.destinations["pbs_longjobs"][0]
@@ -401,12 +412,3 @@ def test_yaml_advanced_validation():
             schema_files=[schema],
         )
         c.validate()
-
-
-class MockJobMetrics(object):
-
-    def __init__(self):
-        pass
-
-    def set_destination_conf_element(self, id, element):
-        pass
